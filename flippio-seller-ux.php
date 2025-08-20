@@ -32,7 +32,19 @@ final class Flippio_Seller_UX {
 
   /** Enqueue kun på selger-dashbordets produktsider */
   public function enqueue_assets() {
-    if (!function_exists('dokan_is_seller_dashboard') || !dokan_is_seller_dashboard()) return;
+    // Sjekk om vi er på en Dokan-side
+    if (!function_exists('dokan_is_seller_dashboard')) {
+      // Fallback: sjekk om vi er på en side med Dokan-klasser
+      global $post;
+      if (!$post || !has_shortcode($post->post_content, 'dokan-dashboard')) {
+        return;
+      }
+    } elseif (!dokan_is_seller_dashboard()) {
+      return;
+    }
+
+    // Debug: log at vi laster assets
+    error_log('Flippio Seller UX: Laster assets på Dokan-side');
 
     // Vi laster alltid på dashboard, men JS sjekker om form finnes før den gjør noe.
     wp_register_script(
@@ -54,6 +66,7 @@ final class Flippio_Seller_UX {
       'is_admin'           => current_user_can('manage_options'),
       'rules'              => $rules,
       'ajaxurl'            => admin_url('admin-ajax.php'),
+      'debug'              => WP_DEBUG,
     ]);
 
     wp_enqueue_script('flippio-seller-ux');
@@ -61,7 +74,8 @@ final class Flippio_Seller_UX {
     // Litt base-CSS
     $css = '.flippio-advanced{display:none;margin-top:12px;border:1px dashed #e5e7eb;padding:12px;border-radius:10px}
             .flippio-adv-btn{margin-top:8px}
-            .flippio-help{font-size:12px;opacity:.8;margin-top:4px}';
+            .flippio-help{font-size:12px;opacity:.8;margin-top:4px}
+            .flippio-scan-btn{background:#0073aa !important;color:white !important;border:none !important;padding:8px 16px !important;border-radius:4px !important;cursor:pointer !important;}';
     wp_register_style('flippio-seller-ux-inline', false);
     wp_enqueue_style('flippio-seller-ux-inline');
     wp_add_inline_style('flippio-seller-ux-inline', $css);
@@ -99,15 +113,23 @@ final class Flippio_Seller_UX {
       ];
     }
     update_option(self::OPT_RULES, $rules);
-    add_settings_error('flippio_seller_ux', 'saved', __('Regler lagret.', 'flippio_seller_ux'), 'updated');
+    add_settings_error('flippio_seller_ux', 'saved', __('Regler lagret.', 'flippio-seller-ux'), 'updated');
   }
 
   /** AJAX: lagre skannet feltliste (admin) */
   public function ajax_store_fields() {
     if (!current_user_can('manage_options')) wp_send_json_error('forbidden', 403);
+    
     $fields_json = isset($_POST['fields']) ? wp_unslash($_POST['fields']) : '';
     $fields = json_decode($fields_json, true);
-    if (!is_array($fields)) $fields = [];
+    
+    if (!is_array($fields)) {
+      wp_send_json_error('Invalid fields data', 400);
+    }
+    
+    // Log for debugging
+    error_log('Flippio Seller UX: Lagrer ' . count($fields) . ' felter');
+    
     update_option(self::OPT_FIELDS, $fields);
     wp_send_json_success(['count' => count($fields)]);
   }
