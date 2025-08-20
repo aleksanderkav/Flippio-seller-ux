@@ -5,19 +5,48 @@
   const isAdmin  = !!ctx.is_admin;
   const rules    = ctx.rules || {};
   const ajaxurl  = ctx.ajaxurl;
+  const debug    = !!ctx.debug;
+
+  function log(message, data) {
+    if (debug) {
+      console.log('Flippio Seller UX:', message, data || '');
+    }
+  }
 
   function findForm(){
-    // Dokan add/edit product forms - oppdatert for å finne riktig skjema
-    const $form = $('form.dokan-auction-product-form, form.dokan-product-edit-form, form.dokan-product-add-form');
-    if (!$form.length) {
-      // Fallback: søk etter skjema med Dokan-klasser
-      const $dokanForm = $('form[class*="dokan"]');
-      if ($dokanForm.length) {
-        console.log('Flippio Seller UX: Fant Dokan-skjema via fallback');
-        return $dokanForm.first();
+    log('Søker etter Dokan-skjema...');
+    
+    // Prøv flere måter å finne skjemaet på
+    const selectors = [
+      'form.dokan-auction-product-form',
+      'form.dokan-product-edit-form', 
+      'form.dokan-product-add-form',
+      'form[class*="dokan"]',
+      'form[action*="auction"]',
+      'form[action*="product"]'
+    ];
+    
+    for (let selector of selectors) {
+      const $form = $(selector);
+      if ($form.length) {
+        log('Fant skjema med selector:', selector);
+        return $form.first();
       }
     }
-    return $form.length ? $form.first() : $();
+    
+    // Fallback: søk etter skjema med Dokan-klasser i innholdet
+    const $allForms = $('form');
+    for (let i = 0; i < $allForms.length; i++) {
+      const $form = $allForms.eq(i);
+      const formHtml = $form.html();
+      if (formHtml.includes('dokan') || formHtml.includes('auction')) {
+        log('Fant skjema via innholdsanalyse');
+        return $form;
+      }
+    }
+    
+    log('Fant ikke Dokan-skjema');
+    return $();
   }
 
   function addAdvancedBox($form){
@@ -94,10 +123,18 @@
 
   function addAdminScanButton($form){
     if (!isAdmin) return;
-    const $btn = $('<button type="button" class="dokan-btn dokan-btn-default" style="margin:8px 0; background: #0073aa; color: white;">🔍 Skann felter (admin)</button>');
+    
+    const $btn = $('<button type="button" class="dokan-btn dokan-btn-default flippio-scan-btn" style="margin:8px 0;">🔍 Skann felter (admin)</button>');
     $btn.on('click', function(){
+      log('Skanne-knapp klikket');
       const data = scanFields($form);
-      console.log('Flippio Seller UX: Skannet felter:', data);
+      
+      if (Object.keys(data).length === 0) {
+        alert('❌ Ingen felter funnet. Sjekk at du er på riktig side.');
+        return;
+      }
+      
+      log('Skannet felter:', data);
       
       $.post(ajaxurl, { action: 'flippio_store_fields', fields: JSON.stringify(data) }, function(resp){
         if (resp.success) {
@@ -107,22 +144,24 @@
         }
       }).fail(function(xhr, status, error) {
         alert('❌ AJAX-feil: ' + error);
-        console.error('Flippio Seller UX AJAX error:', xhr, status, error);
+        log('AJAX error:', xhr, status, error);
       });
     });
     
     // Plasser knappen øverst i skjemaet
-    const $firstGroup = $form.find('.dokan-form-group').first();
+    const $firstGroup = $form.find('.dokan-form-group, .form-group').first();
     if ($firstGroup.length) {
       $btn.insertBefore($firstGroup);
     } else {
       $form.prepend($btn);
     }
+    
+    log('Skanne-knapp lagt til');
   }
 
   function scanFields($form){
     const map = {};
-    console.log('Flippio Seller UX: Starter felt-skanning...');
+    log('Starter felt-skanning...');
     
     $form.find('input, select, textarea').each(function(){
       const el = this;
@@ -160,49 +199,71 @@
       };
     });
     
-    console.log('Flippio Seller UX: Felt-skanning fullført. Fant ' + Object.keys(map).length + ' felter.');
+    log('Felt-skanning fullført. Fant ' + Object.keys(map).length + ' felter');
     return map;
   }
 
+  function addDebugInfo($form) {
+    if (!debug) return;
+    
+    const $debug = $('<div class="flippio-debug"></div>');
+    $debug.html(`
+      <strong>Flippio Seller UX Debug Info:</strong><br>
+      - Plugin URL: ${ctx.plugin_url || 'N/A'}<br>
+      - Is Edit: ${isEdit}<br>
+      - Is Create Auction: ${isCreateAuction}<br>
+      - Is Admin: ${isAdmin}<br>
+      - Rules count: ${Object.keys(rules).length}<br>
+      - Form class: ${$form.attr('class') || 'N/A'}<br>
+      - Form action: ${$form.attr('action') || 'N/A'}
+    `);
+    
+    $form.prepend($debug);
+  }
+
   $(function(){
-    console.log('Flippio Seller UX: Initialiserer...');
+    log('Initialiserer...');
     
-    const $form = findForm();
-    if (!$form.length) {
-      console.log('Flippio Seller UX: Fant ikke Dokan-skjema');
-      return;
-    }
-    
-    console.log('Flippio Seller UX: Fant skjema:', $form.attr('class'));
+    // Vent litt for å la siden laste ferdig
+    setTimeout(function() {
+      const $form = findForm();
+      if (!$form.length) {
+        log('Fant ikke Dokan-skjema');
+        return;
+      }
+      
+      log('Fant skjema:', $form.attr('class'));
 
-    const $advBox = addAdvancedBox($form);
-    addAdminScanButton($form);
+      const $advBox = addAdvancedBox($form);
+      addAdminScanButton($form);
+      addDebugInfo($form);
 
-    // Enkel validering på create (kan utvides)
-    if (isCreateAuction){
-      $form.on('submit', function(){
-        const required = [
-          'input[name="post_title"]',
-          'input[name="_auction_start_price"]',
-          'input[name="_auction_bid_increment"]',
-          'input[name="_auction_dates_to"]'
-        ];
-        for (let sel of required){
-          const $f = $form.find(sel);
-          if ($f.length && !$f.val()){
-            $f.focus();
-            alert('Fyll ut påkrevde felter før du lagrer.');
-            return false;
+      // Enkel validering på create (kan utvides)
+      if (isCreateAuction){
+        $form.on('submit', function(){
+          const required = [
+            'input[name="post_title"]',
+            'input[name="_auction_start_price"]',
+            'input[name="_auction_bid_increment"]',
+            'input[name="_auction_dates_to"]'
+          ];
+          for (let sel of required){
+            const $f = $form.find(sel);
+            if ($f.length && !$f.val()){
+              $f.focus();
+              alert('Fyll ut påkrevde felter før du lagrer.');
+              return false;
+            }
           }
-        }
-      });
-    }
+        });
+      }
 
-    // Hjelpetekster
-    addHelps($form);
-    // Anvend regler (skjul/flytt)
-    applyRules($form, $advBox);
-    
-    console.log('Flippio Seller UX: Initialisering fullført');
+      // Hjelpetekster
+      addHelps($form);
+      // Anvend regler (skjul/flytt)
+      applyRules($form, $advBox);
+      
+      log('Initialisering fullført');
+    }, 1000); // Vent 1 sekund
   });
 })(jQuery);

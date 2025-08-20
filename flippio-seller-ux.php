@@ -30,23 +30,11 @@ final class Flippio_Seller_UX {
     add_action('dokan_product_updated',   [$this, 'apply_safe_defaults'], 10, 2);
   }
 
-  /** Enqueue kun på selger-dashbordets produktsider */
+  /** Enqueue på alle sider - JS sjekker om Dokan-skjema finnes */
   public function enqueue_assets() {
-    // Sjekk om vi er på en Dokan-side
-    if (!function_exists('dokan_is_seller_dashboard')) {
-      // Fallback: sjekk om vi er på en side med Dokan-klasser
-      global $post;
-      if (!$post || !has_shortcode($post->post_content, 'dokan-dashboard')) {
-        return;
-      }
-    } elseif (!dokan_is_seller_dashboard()) {
-      return;
-    }
-
     // Debug: log at vi laster assets
-    error_log('Flippio Seller UX: Laster assets på Dokan-side');
+    error_log('Flippio Seller UX: Laster assets på alle sider');
 
-    // Vi laster alltid på dashboard, men JS sjekker om form finnes før den gjør noe.
     wp_register_script(
       'flippio-seller-ux',
       plugins_url('seller-ux.js', __FILE__),
@@ -67,6 +55,7 @@ final class Flippio_Seller_UX {
       'rules'              => $rules,
       'ajaxurl'            => admin_url('admin-ajax.php'),
       'debug'              => WP_DEBUG,
+      'plugin_url'         => plugins_url('', __FILE__),
     ]);
 
     wp_enqueue_script('flippio-seller-ux');
@@ -75,7 +64,8 @@ final class Flippio_Seller_UX {
     $css = '.flippio-advanced{display:none;margin-top:12px;border:1px dashed #e5e7eb;padding:12px;border-radius:10px}
             .flippio-adv-btn{margin-top:8px}
             .flippio-help{font-size:12px;opacity:.8;margin-top:4px}
-            .flippio-scan-btn{background:#0073aa !important;color:white !important;border:none !important;padding:8px 16px !important;border-radius:4px !important;cursor:pointer !important;}';
+            .flippio-scan-btn{background:#0073aa !important;color:white !important;border:none !important;padding:8px 16px !important;border-radius:4px !important;cursor:pointer !important;}
+            .flippio-debug{background:#f0f0f0;padding:10px;margin:10px 0;border:1px solid #ccc;border-radius:4px;font-family:monospace;font-size:12px;}';
     wp_register_style('flippio-seller-ux-inline', false);
     wp_enqueue_style('flippio-seller-ux-inline');
     wp_add_inline_style('flippio-seller-ux-inline', $css);
